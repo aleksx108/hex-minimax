@@ -16,13 +16,19 @@ const r = 40;
 const absolutePolyRotation = 90 * Math.PI/180;
 
     class hex {
-    constructor(radius, color){
+    constructor(radius, color, counter, weight = null){
         this.sides = 6;
         this.radius = radius;
         this.rotation = absolutePolyRotation;
         this.points = {};
         this.strokeColor = color;
         this.center = null;
+        this.isFilled = false;
+        this.playerFilled = false;
+        this.idInGrid = counter;
+        this.neighbors = {}; //todo add all hexes with any point matching this points
+        this.weight = weight;
+        this.neighborCount = 0;
     }
 
     draw(x,y){
@@ -47,9 +53,13 @@ const absolutePolyRotation = 90 * Math.PI/180;
         ctx.closePath();
         ctx.stroke();
 
+        //debug = draw hex id
+        ctx.font = '26px serif';
+        ctx.strokeText(this.weight, this.center.x, this.center.y);
+
     }
 
-    fill(color){
+    fill(color, filledByPlayer){
         ctx.beginPath();
         for (var i = 0; i < 6; i++) {
             ctx.lineTo(this.points[i].x ,this.points[i].y);
@@ -59,9 +69,15 @@ const absolutePolyRotation = 90 * Math.PI/180;
         ctx.closePath();
         ctx.fill();
 
-    }
+        this.isFilled = true;
+
+        if(filledByPlayer == true){
+            this.playerFilled = true;
+        }
 
     }
+
+}
 
 init();
 
@@ -69,7 +85,7 @@ function init() {
     ctx.fillStyle = "#d4d4d4";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    hexGrid = drawGrid(11,11,80,80);
+    hexGrid = drawGrid(5,5,80,80);
 }
 
 //todo
@@ -90,26 +106,72 @@ function drawGrid(columns, rows, startGridX, startGridY){
     initialX = x = startGridX;
     initialY = y = startGridY;
     counter = 1;
+    previousRowFirstHex = null;
     for (let j = 1; j <= columns; j++) {
         for (let i = 1; i <= rows; i++) {
-            grid[counter] = {
-                id: counter,
-                hex: new hex(r, 'black')
+            
+            if(i < columns/2+1){
+                weight = Math.abs(i);
+            }
+            else{
+                weight = Math.abs(columns - i+1);
             }
 
-            console.log(counter);
+            if(j < rows/2+1){
+                weight += Math.abs(j);
+            }else{
+                weight += Math.abs(rows - j+1);
+            }
+            
+            grid[counter] = {
+                id: counter,
+                hex: new hex(r, 'black',counter, weight)
+            }
+
+            if(i == 1){
+                previousRowFirstHex = grid[counter];
+            }
+
+            // console.log(counter);
             grid[counter].hex.draw(x,y)
             
             x =  grid[counter].hex.points[5].x ;
             y =  grid[counter].hex.points[5].y + r;
             counter++;
+
         }
-        x = initialX-(11*j)+ r*2 * j; //quick fix
+        x = initialX-(11*j)+ r*2 * j; //quick fix - not correct or precize calculation
         y = initialY;
 
     }
+    setHexesNeighbors(grid);
     return grid;
 
+}
+
+
+function setHexesNeighbors(hay){
+    neighborCount = 0;
+    for(let i = 1; i < hay.length; i++){ // 1st element
+        for(let j = 1; j < hay.length; j++){ // all elements
+            for(let k = 1; k < a; k++){ //1st element all points
+                for(let g = 1; g < a; g++){ // all element each points
+
+                    if(i != j){//check if not self , round number to first two digits, because the hex grid points are not accurate enough
+                        if( Number(String(Math.round(hay[i].hex.points[k].x)).slice(0, 2)) == Number(String(Math.round(hay[j].hex.points[g].x)).slice(0, 2)) ){ //1st point x coordinates match all elemnent x coordinates
+                            if( Number(String(Math.round(hay[i].hex.points[k].y)).slice(0, 2)) == Number(String(Math.round(hay[j].hex.points[g].y)).slice(0, 2)) ){ // 1st point y coordinates match all elemnent y coordinates
+                                hay[i].hex.neighbors[j] = hay[j].hex;
+                            }
+                        }
+                    }
+                }
+            }
+            neighborCount = Object.keys(hay[i].hex.neighbors).length;
+        }
+        hay[i].hex.neighborCount = neighborCount;
+        neighborCount = 0;
+        // console.log(hexGrid);
+    }
 }
 
 function getMousePosition(canvas, event) {
@@ -122,7 +184,7 @@ function getMousePosition(canvas, event) {
 }
 
 
-function getClosestCenter(coord, hay){
+function getClosestCenter(coord, hay, color){
     let needle = coord;
     closestHex = {
         'hex':{
@@ -132,6 +194,8 @@ function getClosestCenter(coord, hay){
         }
     };
 
+
+    //todo change from checking center but if click coordinates are between all hex 6 points !!!!!!!! That will be more precise
     for(let i = 1; i < hay.length; i++){
         if(Math.abs(needle.x - hay[i].hex.center.x) <= Math.abs(needle.x - closestHex.hex.center.x)){
             if(Math.abs(needle.y - hay[i].hex.center.y) <= Math.abs(needle.y - closestHex.hex.center.y)){
@@ -152,15 +216,63 @@ function getClosestCenter(coord, hay){
     // ctx.fillStyle = 'red';
     // ctx.fill();
 
-    closestHex.hex.fill('#0062ff'); //#e82323
+    closestHex.hex.fill(color, true);
 
-    console.log(needle);
-    console.log(closestHex.hex);
+    // console.log(needle);
+    return closestHex.hex;
 }
 
 let canvasElem = document.querySelector("canvas");
   
 canvasElem.addEventListener("mousedown", function(e)
 {
-    getClosestCenter(getMousePosition(canvasElem, e), hexGrid);
+    //player move
+    currentHex = getClosestCenter(getMousePosition(canvasElem, e), hexGrid, '#0062ff');
+    // console.log('closestCenterReturn',currentHex);
+    res = minimax(currentHex, 1, false);
+    // console.log('minimax return',res);
+    //ai move
+    bestHexAiDecision = bestMove(minimax(currentHex, 1, true)); 
+    getClosestCenter(bestHexAiDecision, hexGrid, '#e82323');
 });
+
+
+function bestMove(hex){
+
+    return {'x': hex.center.x, 'y': hex.center.y};
+}
+
+function minimax(currentHex, depth, maximizePlayer){
+    gameOver = false;
+
+    if (depth == 0 || gameOver == true){
+        if(maximizePlayer == false){
+            console.log('bestWeight',currentHex.weight);
+
+        }
+        return currentHex;
+    }
+
+    if (maximizePlayer == true){
+        maxEvaluation = -Infinity;
+
+        for(let i = 0; i < currentHex.neighborCount; i++){
+            neighborId = Object.keys(currentHex.neighbors)[i];
+            evaluation = minimax(currentHex.neighbors[neighborId], depth-1, true)
+            maxEvaluation = currentHex.neighbors[neighborId].weight > maxEvaluation ? currentHex.neighbors[neighborId] : maxEvaluation ;
+        }
+        return maxEvaluation;
+    }
+
+    if (maximizePlayer == false){
+        minEvaluation = +Infinity;
+        // console.log(currentHex.neighborCount);
+        for(let i = 0; i < currentHex.neighborCount; i++){
+            neighborId = Object.keys(currentHex.neighbors)[i];
+            evaluation = minimax(currentHex.neighbors[neighborId], depth-1, false)
+            minEvaluation = currentHex.neighbors[neighborId].weight < minEvaluation ? currentHex.neighbors[neighborId] : minEvaluation ;
+        }
+        return minEvaluation;
+    }
+
+}
